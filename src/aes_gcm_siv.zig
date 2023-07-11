@@ -21,7 +21,7 @@ pub const Aes128GcmSiv = AesGcmSiv(crypto.core.aes.Aes128);
 /// - https://eprint.iacr.org/2017/168
 pub const Aes256GcmSiv = AesGcmSiv(crypto.core.aes.Aes256);
 
-fn AesGcmSiv(comptime Aes: anytype) type {
+fn AesGcmSiv(comptime Aes: type) type {
     comptime debug.assert(Aes.block.block_length == 16);
 
     return struct {
@@ -45,29 +45,9 @@ fn AesGcmSiv(comptime Aes: anytype) type {
             var enc_key: [key_length]u8 = undefined;
             deriveKeys(&mac_key, &enc_key, npub, key);
 
-            const block_count = 1 +
-                (math.divCeil(usize, ad.len, Polyval.block_length) catch unreachable) +
-                (math.divCeil(usize, m.len, Polyval.block_length) catch unreachable);
-            var mac = Polyval.initForBlockCount(&mac_key, block_count);
-            mac.update(ad);
-            mac.pad();
-            mac.update(m);
-            mac.pad();
-            mac.update(&length_block: {
-                var b: [16]u8 = undefined;
-                mem.writeIntLittle(u64, b[0..8], ad.len * 8);
-                mem.writeIntLittle(u64, b[8..16], m.len * 8);
-                break :length_block b;
-            });
-            var auth: [Polyval.mac_length]u8 = undefined;
-            mac.final(&auth);
-            for (auth[0..nonce_length], npub) |*a, n| {
-                a.* ^= n;
-            }
-            auth[auth.len - 1] &= 0x7F;
-
             var aes = Aes.initEnc(enc_key);
-            aes.encrypt(tag, &auth);
+            tag.* = computeTag(m, ad, npub, mac_key, aes);
+
             var counter_block = tag.*;
             counter_block[counter_block.len - 1] |= 0x80;
             ctr(
@@ -108,6 +88,21 @@ fn AesGcmSiv(comptime Aes: anytype) type {
                 std.builtin.Endian.Little,
             );
 
+            const expected_tag = computeTag(m, ad, npub, mac_key, aes);
+
+            if (!crypto.utils.timingSafeEql([tag_length]u8, expected_tag, tag)) {
+                crypto.utils.secureZero(u8, m);
+                return error.AuthenticationFailed;
+            }
+        }
+
+        inline fn computeTag(
+            m: []const u8,
+            ad: []const u8,
+            npub: [nonce_length]u8,
+            mac_key: [Polyval.key_length]u8,
+            aes: crypto.core.aes.AesEncryptCtx(Aes),
+        ) [tag_length]u8 {
             const block_count = 1 +
                 (math.divCeil(usize, ad.len, Polyval.block_length) catch unreachable) +
                 (math.divCeil(usize, m.len, Polyval.block_length) catch unreachable);
@@ -122,20 +117,14 @@ fn AesGcmSiv(comptime Aes: anytype) type {
                 mem.writeIntLittle(u64, b[8..16], m.len * 8);
                 break :length_block b;
             });
-            var auth: [Polyval.mac_length]u8 = undefined;
-            mac.final(&auth);
-            for (auth[0..nonce_length], npub) |*a, n| {
+            var tag: [Polyval.mac_length]u8 = undefined;
+            mac.final(&tag);
+            for (tag[0..nonce_length], npub) |*a, n| {
                 a.* ^= n;
             }
-            auth[auth.len - 1] &= 0x7F;
-
-            var expected_tag: [tag_length]u8 = undefined;
-            aes.encrypt(&expected_tag, &auth);
-
-            if (!crypto.utils.timingSafeEql([tag_length]u8, expected_tag, tag)) {
-                crypto.utils.secureZero(u8, m);
-                return error.AuthenticationFailed;
-            }
+            tag[tag.len - 1] &= 0x7F;
+            aes.encrypt(&tag, &tag);
+            return tag;
         }
 
         inline fn deriveKeys(mac_key: *[Polyval.key_length]u8, enc_key: *[key_length]u8, npub: [nonce_length]u8, key: [key_length]u8) void {

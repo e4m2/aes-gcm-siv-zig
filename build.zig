@@ -4,7 +4,7 @@ pub fn build(b: *std.Build) void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
 
-    const main_source_file = std.Build.FileSource.relative("src/aes_gcm_siv.zig");
+    const main_source_file = std.Build.LazyPath.relative("src/aes_gcm_siv.zig");
 
     _ = b.addModule("aes_gcm_siv", .{ .source_file = main_source_file });
 

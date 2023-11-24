@@ -45,7 +45,7 @@ fn AesGcmSiv(comptime Aes: type) type {
             var enc_key: [key_length]u8 = undefined;
             deriveKeys(&mac_key, &enc_key, npub, key);
 
-            var aes = Aes.initEnc(enc_key);
+            const aes = Aes.initEnc(enc_key);
             tag.* = computeTag(m, ad, npub, mac_key, aes);
 
             var counter_block = tag.*;
@@ -57,7 +57,7 @@ fn AesGcmSiv(comptime Aes: type) type {
                 c,
                 m,
                 counter_block,
-                std.builtin.Endian.Little,
+                .little,
             );
         }
 
@@ -75,7 +75,7 @@ fn AesGcmSiv(comptime Aes: type) type {
             var enc_key: [key_length]u8 = undefined;
             deriveKeys(&mac_key, &enc_key, npub, key);
 
-            var aes = Aes.initEnc(enc_key);
+            const aes = Aes.initEnc(enc_key);
             var counter_block = tag;
             counter_block[counter_block.len - 1] |= 0x80;
             ctr(
@@ -85,7 +85,7 @@ fn AesGcmSiv(comptime Aes: type) type {
                 m,
                 c,
                 counter_block,
-                std.builtin.Endian.Little,
+                .little,
             );
 
             const expected_tag = computeTag(m, ad, npub, mac_key, aes);
@@ -113,8 +113,8 @@ fn AesGcmSiv(comptime Aes: type) type {
             mac.pad();
             mac.update(&length_block: {
                 var b: [16]u8 = undefined;
-                mem.writeIntLittle(u64, b[0..8], ad.len * 8);
-                mem.writeIntLittle(u64, b[8..16], m.len * 8);
+                mem.writeInt(u64, b[0..8], ad.len * 8, .little);
+                mem.writeInt(u64, b[8..16], m.len * 8, .little);
                 break :length_block b;
             });
             var tag: [Polyval.mac_length]u8 = undefined;
@@ -133,11 +133,11 @@ fn AesGcmSiv(comptime Aes: type) type {
             nonce_counter_block[4..].* = npub;
 
             {
-                mem.writeIntLittle(u32, nonce_counter_block[0..4], 0);
+                mem.writeInt(u32, nonce_counter_block[0..4], 0, .little);
                 var b0: [16]u8 = undefined;
                 aes.encrypt(&b0, &nonce_counter_block);
 
-                mem.writeIntLittle(u32, nonce_counter_block[0..4], 1);
+                mem.writeInt(u32, nonce_counter_block[0..4], 1, .little);
                 var b1: [16]u8 = undefined;
                 aes.encrypt(&b1, &nonce_counter_block);
 
@@ -145,22 +145,22 @@ fn AesGcmSiv(comptime Aes: type) type {
             }
 
             {
-                mem.writeIntLittle(u32, nonce_counter_block[0..4], 2);
+                mem.writeInt(u32, nonce_counter_block[0..4], 2, .little);
                 var b2: [16]u8 = undefined;
                 aes.encrypt(&b2, &nonce_counter_block);
 
-                mem.writeIntLittle(u32, nonce_counter_block[0..4], 3);
+                mem.writeInt(u32, nonce_counter_block[0..4], 3, .little);
                 var b3: [16]u8 = undefined;
                 aes.encrypt(&b3, &nonce_counter_block);
 
                 enc_key[0..16].* = (b2[0..8] ++ b3[0..8]).*;
 
                 if (key_length == 32) {
-                    mem.writeIntLittle(u32, nonce_counter_block[0..4], 4);
+                    mem.writeInt(u32, nonce_counter_block[0..4], 4, .little);
                     var b4: [16]u8 = undefined;
                     aes.encrypt(&b4, &nonce_counter_block);
 
-                    mem.writeIntLittle(u32, nonce_counter_block[0..4], 5);
+                    mem.writeInt(u32, nonce_counter_block[0..4], 5, .little);
                     var b5: [16]u8 = undefined;
                     aes.encrypt(&b5, &nonce_counter_block);
 
